@@ -26,7 +26,12 @@ header{ position:sticky; top:0; z-index:10;
   background:var(--bg); border-bottom:1px solid var(--line);
   scroll-padding-top:env(safe-area-inset-top,0px);
 }
-h1{font-size:18px; margin:0 0 10px; font-weight:700;}
+h1{font-size:18px; margin:0; font-weight:700;}
+.titlerow{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+.refreshbtn{border:1px solid var(--line); background:var(--card); color:var(--text);
+  width:32px; height:32px; border-radius:9px; font-size:15px; cursor:pointer;}
+.refreshbtn.spinning{animation:spin 0.8s linear infinite;}
+@keyframes spin{ from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
 .tabs{display:flex; gap:6px;}
 .tab{ flex:1; text-align:center; padding:9px 0; border-radius:10px; font-weight:700;
   background:var(--card); border:1px solid var(--line); color:var(--sub); cursor:pointer; font-size:15px;}
@@ -37,8 +42,11 @@ h1{font-size:18px; margin:0 0 10px; font-weight:700;}
 .navitem.active{color:var(--text); border-color:var(--accent);}
 main{padding:12px 14px 40px; max-width:680px; margin:0 auto;}
 
-.wallwrap{border-radius:14px; overflow:hidden; border:1px solid var(--line); margin-bottom:12px;}
-.wallwrap img{display:block; width:100%; height:auto;}
+.wallwrap{border-radius:14px; overflow:hidden; border:1px solid var(--line); margin-bottom:12px; user-select:none; -webkit-user-select:none; touch-action:pan-y;}
+.wallwrap img{display:block; width:100%; height:auto; pointer-events:none;}
+.wallplaceholder{border-radius:14px; border:1px dashed var(--line); margin-bottom:12px; padding:26px 12px;
+  text-align:center; color:var(--sub); font-size:13px; user-select:none; touch-action:pan-y;}
+.backbtn{border:none; background:none; color:var(--accent); font-weight:700; font-size:13px; padding:4px 0 10px; cursor:pointer;}
 
 .filtergroup{margin-bottom:8px;}
 .filtergroup .glabel{font-size:11px; color:var(--sub); margin-bottom:5px;}
@@ -119,13 +127,10 @@ main{padding:12px 14px 40px; max-width:680px; margin:0 auto;}
 </head>
 <body>
 <header>
-    <!-- 임시 -->
-<div style="position:fixed; top:10px; right:10px; z-index:9999; background:white; padding:10px; border:2px solid black;">
-  <button onclick="alert(JSON.stringify(localStorage))">1. 컴퓨터 데이터 보기</button>
-  <button onclick="const d=prompt('데이터 입력'); if(d){ const j=JSON.parse(d); Object.keys(j).forEach(k=>localStorage.setItem(k,j[k])); location.reload(); }">2. 폰에서 가져오기</button>
-</div>
-  <!-- 임시 -->
-  <h1>🧗 클라이밍 기록</h1>
+  <div class="titlerow">
+    <h1>🧗 클라이밍 기록</h1>
+    <button id="refreshBtn" class="refreshbtn" title="공유 저장소에서 최신 문제 불러오기">🔄</button>
+  </div>
   <div class="navbar" id="pageTabs"></div>
   <div class="tabs" id="tabs"></div>
 </header>
@@ -164,8 +169,10 @@ main{padding:12px 14px 40px; max-width:680px; margin:0 auto;}
     <div id="dayDetail"></div>
   </div>
   <div id="registerPage" style="display:none">
+    <button id="regBackBtn" class="backbtn">← 문제 페이지로</button>
     <div class="tabs" id="regTabs"></div>
     <div class="glabel" style="margin:8px 0 4px">이 섹터를 새 문제로 교체합니다. 기존 기록은 달력에 그대로 남아요.</div>
+    <div class="glabel" id="sharedStatusMsg" style="margin:0 0 10px"></div>
     <div id="regWallArea"></div>
     <div class="imgrow" style="margin-top:8px">
       <label for="regImgFile">새 배치도 사진</label>
@@ -307,6 +314,28 @@ function renderTabs(){
   });
 }
 
+function attachLongPress(el, cb){
+  let timer = null, moved = false, sx=0, sy=0;
+  const start = (x,y)=>{
+    moved = false; sx=x; sy=y;
+    timer = setTimeout(()=>{ if(!moved) cb(); }, 550);
+  };
+  const cancel = ()=>{ if(timer) clearTimeout(timer); timer=null; };
+  el.addEventListener("pointerdown", e=>start(e.clientX, e.clientY));
+  el.addEventListener("pointermove", e=>{
+    if(Math.abs(e.clientX-sx)>10 || Math.abs(e.clientY-sy)>10){ moved=true; cancel(); }
+  });
+  el.addEventListener("pointerup", cancel);
+  el.addEventListener("pointerleave", cancel);
+  el.addEventListener("pointercancel", cancel);
+  el.addEventListener("contextmenu", e=>e.preventDefault());
+}
+
+function goToRegister(sector){
+  regSector = sector; regStaging = []; regPendingImage = undefined;
+  page = "register"; renderAll();
+}
+
 function renderWall(){
   const wa = document.getElementById("wallArea");
   wa.innerHTML = "";
@@ -314,12 +343,20 @@ function renderWall(){
   const lbl = document.querySelector('label[for="imgFile"]');
   lbl.textContent = sec.image ? "배치도 변경" : "배치도 추가";
   document.getElementById("removeImg").style.display = sec.image ? "block":"none";
-  if(!sec.image) return;
+  if(!sec.image){
+    const ph = document.createElement("div");
+    ph.className = "wallplaceholder";
+    ph.textContent = "배치도 없음 · 길게 눌러서 문제 등록";
+    attachLongPress(ph, ()=>goToRegister(current));
+    wa.appendChild(ph);
+    return;
+  }
   const wrap = document.createElement("div");
   wrap.className = "wallwrap";
   const img = document.createElement("img");
   img.src = sec.image;
   wrap.appendChild(img);
+  attachLongPress(wrap, ()=>goToRegister(current));
   wa.appendChild(wrap);
 }
 
@@ -519,7 +556,7 @@ let expandedLevels = new Set();
 function renderPageTabs(){
   const el = document.getElementById("pageTabs");
   el.innerHTML = "";
-  [["routes","문제"],["calendar","달력"],["register","등록"]].forEach(([key,label])=>{
+  [["routes","문제"],["calendar","달력"]].forEach(([key,label])=>{
     const b = document.createElement("div");
     b.className = "navitem" + (page===key ? " active":"");
     b.textContent = label;
@@ -766,9 +803,10 @@ document.getElementById("regImgFile").addEventListener("change", (e)=>{
 });
 document.getElementById("regRemoveImg").onclick = ()=>{ regPendingImage = null; renderAll(); };
 
+document.getElementById("regBackBtn").onclick = ()=>{ page = "routes"; renderAll(); };
 document.getElementById("regClearBtn").onclick = ()=>{ regStaging = []; renderAll(); };
 
-document.getElementById("regApplyBtn").onclick = ()=>{
+document.getElementById("regApplyBtn").onclick = async ()=>{
   const ok = confirm("Sector " + regSector + "의 기존 문제 " + data[regSector].routes.length + "개를 새 문제 " + regStaging.length + "개로 교체할까요?\n(과거 기록은 달력에 그대로 보존돼요)");
   if(!ok) return;
   data.archive = data.archive || [];
@@ -777,12 +815,22 @@ document.getElementById("regApplyBtn").onclick = ()=>{
       data.archive.push({sector:regSector, routeId:r.id, color:r.color, level:r.level, status:h.status, date:h.date});
     });
   });
-  data[regSector].routes = regStaging.map((r,i)=>({
+  const newRoutes = regStaging.map((r,i)=>({
     id:"n"+Date.now()+i+Math.random().toString(36).slice(2,5),
     color:r.color, level:r.level, history:[]
   }));
+  data[regSector].routes = newRoutes;
   if(regPendingImage !== undefined) data[regSector].image = regPendingImage;
   save();
+  if(JSONBIN_READY){
+    try{
+      await pushSectorToShared(regSector);
+      sharedOk = true;
+    }catch(e){
+      alert("공유 저장소에 반영하지 못해서 이 기기에만 적용됐어요.\n(" + e.message + ")");
+      sharedOk = false;
+    }
+  }
   regStaging = [];
   regPendingImage = undefined;
   current = regSector;
@@ -795,6 +843,14 @@ function renderRegisterPage(){
   renderRegWall();
   renderRegColorOptions();
   renderRegStaging();
+  const msg = document.getElementById("sharedStatusMsg");
+  if(!JSONBIN_READY){
+    msg.textContent = "⚠ 공유 저장소 미설정 — 코드 상단 JSONBIN_API_KEY/BIN_ID를 채우면 모두에게 공유돼요. 지금은 이 기기에만 적용됩니다.";
+  }else if(sharedOk){
+    msg.textContent = "🟢 공유 저장소 연결됨 — 여기서 적용하면 모두에게 반영돼요.";
+  }else{
+    msg.textContent = "🔴 공유 저장소 연결 실패 — 이 기기에만 적용될 수 있어요.";
+  }
 }
 
 function renderAll(){
@@ -815,8 +871,101 @@ function renderAll(){
     renderRegisterPage();
   }
 }
+// ===== 공유 저장소: jsonbin.io =====
+// 1) https://jsonbin.io 가입 (무료) -> API Keys 메뉴에서 "X-Master-Key" 복사
+// 2) 대시보드에서 Create Bin -> 내용은 그냥 {} 로 생성
+// 3) 그 Bin의 ID를 복사해서 아래 두 값을 채워넣으세요.
+const JSONBIN_API_KEY = "$2a$10$ZLJNV/5KIHLHyxBJSnrgR.T6BESybZ.H8O1oURQndOD.ItwLHCYNy";
+const JSONBIN_BIN_ID   = "6ab794f4ac6210605af742df";
+const JSONBIN_READY = JSONBIN_API_KEY.indexOf("여기에")===-1 && JSONBIN_BIN_ID.indexOf("여기에")===-1;
+const JSONBIN_URL = "https://api.jsonbin.io/v3/b/" + JSONBIN_BIN_ID;
+
+async function jbGet(){
+  const res = await fetch(JSONBIN_URL + "/latest", {
+    headers: { "X-Master-Key": JSONBIN_API_KEY }
+  });
+  if(!res.ok) throw new Error("jsonbin get failed: " + res.status);
+  const body = await res.json();
+  return body.record || {};
+}
+async function jbPut(record){
+  const res = await fetch(JSONBIN_URL, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY },
+    body: JSON.stringify(record)
+  });
+  if(!res.ok) throw new Error("jsonbin put failed: " + res.status);
+}
+
+function reconcileSector(s, remote){
+  if(!remote) return;
+  const remoteRoutes = remote.routes || [];
+  const remoteIds = new Set(remoteRoutes.map(rr=>rr.id));
+  const oldById = {};
+  data[s].routes.forEach(r=>{ oldById[r.id] = r; });
+  data.archive = data.archive || [];
+  data[s].routes.forEach(r=>{
+    if(!remoteIds.has(r.id) && (r.history||[]).length){
+      (r.history||[]).forEach(h=>{
+        data.archive.push({sector:s, routeId:r.id, color:r.color, level:r.level, status:h.status, date:h.date});
+      });
+    }
+  });
+  data[s].routes = remoteRoutes.map(rr=>{
+    const old = oldById[rr.id];
+    return {id:rr.id, color:rr.color, level:rr.level, history: old ? (old.history||[]) : []};
+  });
+  if(remote.image !== undefined) data[s].image = remote.image;
+}
+
+let sharedOk = false;
+
+async function syncFromShared(silent){
+  if(!JSONBIN_READY) return;
+  try{
+    const remote = await jbGet();
+    const hasAny = SECTIONS.some(s=> remote[s]);
+    if(!hasAny){
+      // 처음이면 지금 이 기기의 데이터로 공유 저장소를 채워요
+      const seed = {};
+      SECTIONS.forEach(s=>{
+        seed[s] = { image: data[s].image, routes: data[s].routes.map(r=>({id:r.id,color:r.color,level:r.level})) };
+      });
+      await jbPut(seed);
+    }else{
+      SECTIONS.forEach(s=> reconcileSector(s, remote[s]));
+      save();
+      renderAll();
+    }
+    sharedOk = true;
+  }catch(e){
+    sharedOk = false;
+    if(!silent) console.warn("공유 저장소 연결 실패:", e.message);
+  }
+}
+
+async function pushSectorToShared(sector){
+  if(!JSONBIN_READY) return;
+  const remote = await jbGet().catch(()=>({}));
+  remote[sector] = {
+    image: data[sector].image,
+    routes: data[sector].routes.map(r=>({id:r.id, color:r.color, level:r.level}))
+  };
+  await jbPut(remote);
+}
+
+document.getElementById("refreshBtn").onclick = async ()=>{
+  const btn = document.getElementById("refreshBtn");
+  if(!JSONBIN_READY){ alert("공유 저장소가 아직 설정되지 않았어요. (JSONBIN_API_KEY / JSONBIN_BIN_ID)"); return; }
+  btn.classList.add("spinning");
+  await syncFromShared(false);
+  btn.classList.remove("spinning");
+  renderAll();
+};
+
 renderAddForm();
 renderAll();
+syncFromShared(false).then(()=>{ if(JSONBIN_READY) renderAll(); });
 </script>
 </body>
 </html>
