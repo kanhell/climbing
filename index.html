@@ -207,26 +207,6 @@ main{padding:12px 14px 40px; max-width:680px; margin:0 auto;}
     </div>
 
     <div class="addbox" style="margin-top:14px">
-      <div class="glabel">색상 등록</div>
-      <div class="regfield">
-        <label>색상 이름</label>
-        <input id="newColorLabel" placeholder="예: 보라" />
-      </div>
-      <div class="colorfields">
-        <div class="colorfield">배경색<input type="color" id="newColorBg" value="#8b5cf6"></div>
-        <div class="colorfield">글자색<input type="color" id="newColorText" value="#ffffff"></div>
-      </div>
-      <button id="pickTextFromImgBtn" type="button" class="pickbtn">🎯 사진에서 글자색 뽑기</button>
-      <div id="colorPickWrap" style="display:none">
-        <div class="glabel">사진을 탭해서 색을 뽑으세요</div>
-        <canvas id="colorPickCanvas"></canvas>
-        <button id="cancelPickBtn" type="button" class="pickbtn">취소</button>
-      </div>
-      <button id="addColorBtn">+ 색상 추가</button>
-      <div class="colorlist" id="colorListWrap"></div>
-    </div>
-
-    <div class="addbox" style="margin-top:14px">
       <div class="glabel">새로 등록할 문제 (하나씩 추가)</div>
       <div class="row">
         <select id="regColor"></select>
@@ -239,10 +219,32 @@ main{padding:12px 14px 40px; max-width:680px; margin:0 auto;}
       <button id="regApplyBtn">이 섹터에 적용하기</button>
       <button id="regClearBtn" class="secondary">목록 비우기</button>
     </div>
+
+    <button id="colorPanelToggle" type="button" class="pickbtn" style="margin-top:18px">🎨 색상 설정</button>
+    <div class="addbox" id="colorPanel" style="margin-top:8px; display:none">
+      <div class="glabel">색상 등록</div>
+      <div class="regfield">
+        <label>색상 이름</label>
+        <input id="newColorLabel" placeholder="예: 보라" />
+      </div>
+      <div class="colorfields">
+        <div class="colorfield">배경색<input type="color" id="newColorBg" value="#8b5cf6"></div>
+        <div class="colorfield">글자색<input type="color" id="newColorText" value="#ffffff"></div>
+      </div>
+      <button id="pickBgFromImgBtn" type="button" class="pickbtn">🎯 사진에서 배경색 뽑기</button>
+      <button id="pickTextFromImgBtn" type="button" class="pickbtn">🎯 사진에서 글자색 뽑기</button>
+      <div id="colorPickWrap" style="display:none">
+        <div class="glabel">사진을 탭해서 색을 뽑으세요</div>
+        <canvas id="colorPickCanvas"></canvas>
+        <button id="cancelPickBtn" type="button" class="pickbtn">취소</button>
+      </div>
+      <button id="addColorBtn">+ 색상 추가</button>
+      <div class="colorlist" id="colorListWrap"></div>
+    </div>
   </div>
 </main>
 
-<script>
+<script type="module">
 const SECTIONS = ["A","B","C","D"];
 const STATUSES = [
   {key:"before",  label:"도전 전", color:"#9CA3AF"},
@@ -342,7 +344,16 @@ function load(){
 }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(data)); }catch(e){} }
 let data = load();
-let current = "C";
+function pickLatestSector(){
+  let best = null, bestDate = null;
+  SECTIONS.forEach(s=>{
+    const cd = data[s] && data[s].changeDate;
+    if(cd && (!bestDate || cd > bestDate)){ bestDate = cd; best = s; }
+  });
+  return best;
+}
+let current = pickLatestSector() || "C";
+let initialSectorPicked = !!pickLatestSector();
 let statusFilter = [];
 let levelFilter = [];
 let expanded = new Set();
@@ -612,25 +623,43 @@ document.getElementById("addBtn").onclick = ()=>{
   save(); renderAll();
 };
 
-// ===== jsonbin.io 공유 저장소 =====
-const JSONBIN_API_KEY = "$2a$10$ZLJNV/5KIHLHyxBJSnrgR.T6BESybZ.H8O1oURQndOD.ItwLHCYNy";
-const JSONBIN_BIN_ID   = "6ab794f4ac6210605af742df";
-const JSONBIN_READY = JSONBIN_API_KEY.indexOf("여기에")===-1 && JSONBIN_BIN_ID.indexOf("여기에")===-1;
-const JSONBIN_URL = "https://api.jsonbin.io/v3/b/" + JSONBIN_BIN_ID;
+// ===== Firebase Firestore 공유 저장소 =====
+// 1) https://console.firebase.google.com -> 프로젝트 추가
+// 2) Build > Firestore Database > 데이터베이스 만들기 (프로덕션 모드로 시작해도 됨, 규칙은 아래 참고)
+// 3) 프로젝트 설정(톱니바퀴) > 일반 > 내 앱 > 웹 앱 추가(</>) -> 나오는 firebaseConfig 값을 아래에 붙여넣기
+// 4) Firestore 규칙 탭에서 아래 규칙 붙여넣고 게시:
+//    rules_version = '2';
+//    service cloud.firestore {
+//      match /databases/{database}/documents {
+//        match /climbing/{doc} { allow read, write: if true; }
+//      }
+//    }
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
-async function jbGet(){
-  const res = await fetch(JSONBIN_URL + "/latest", { headers: { "X-Master-Key": JSONBIN_API_KEY } });
-  if(!res.ok) throw new Error("jsonbin get failed: " + res.status);
-  const body = await res.json();
-  return body.record || {};
+const firebaseConfig = {
+  apiKey: "AIzaSyCGQjnx6UQCaru-sDPvarg8qjKN9y9qqHw",
+  authDomain: "climbing-22d7f.firebaseapp.com",
+  projectId: "climbing-22d7f",
+  storageBucket: "climbing-22d7f.firebasestorage.app",
+  messagingSenderId: "210024090627",
+  appId: "1:210024090627:web:df2a3cc9ac19da08685236",
+  measurementId: "G-TVL8BPX4SK"
+};
+const FIREBASE_READY = firebaseConfig.apiKey.indexOf("여기에")===-1;
+let fsdb = null;
+if(FIREBASE_READY){
+  const fbApp = initializeApp(firebaseConfig);
+  fsdb = getFirestore(fbApp);
 }
-async function jbPut(record){
-  const res = await fetch(JSONBIN_URL, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY },
-    body: JSON.stringify(record)
-  });
-  if(!res.ok) throw new Error("jsonbin put failed: " + res.status);
+const SHARED_DOC = ()=> doc(fsdb, "climbing", "shared");
+
+async function fbGet(){
+  const snap = await getDoc(SHARED_DOC());
+  return snap.exists() ? snap.data() : {};
+}
+async function fbPut(record){
+  await setDoc(SHARED_DOC(), record);
 }
 
 function reconcileSector(s, remote){
@@ -659,9 +688,9 @@ function reconcileSector(s, remote){
 let sharedOk = false;
 
 async function syncFromShared(silent){
-  if(!JSONBIN_READY) return;
+  if(!FIREBASE_READY) return;
   try{
-    const remote = await jbGet();
+    const remote = await fbGet();
     SECTIONS.forEach(s=> reconcileSector(s, remote[s]));
     data.colors = remote.colors || data.colors || [];
     save();
@@ -673,27 +702,27 @@ async function syncFromShared(silent){
 }
 
 async function pushSectorToShared(sector){
-  if(!JSONBIN_READY) return;
-  const remote = await jbGet().catch(()=>({}));
+  if(!FIREBASE_READY) return;
+  const remote = await fbGet().catch(()=>({}));
   remote[sector] = {
     image: data[sector].image,
     theme: data[sector].theme || "",
     changeDate: data[sector].changeDate || null,
     routes: data[sector].routes.map(r=>({id:r.id, color:r.color, level:r.level}))
   };
-  await jbPut(remote);
+  await fbPut(remote);
 }
 
 async function pushColorsToShared(){
-  if(!JSONBIN_READY) return;
-  const remote = await jbGet().catch(()=>({}));
+  if(!FIREBASE_READY) return;
+  const remote = await fbGet().catch(()=>({}));
   remote.colors = data.colors || [];
-  await jbPut(remote);
+  await fbPut(remote);
 }
 
 document.getElementById("refreshBtn").onclick = async ()=>{
   const btn = document.getElementById("refreshBtn");
-  if(!JSONBIN_READY){ alert("공유 저장소가 아직 설정되지 않았어요. (JSONBIN_API_KEY / JSONBIN_BIN_ID)"); return; }
+  if(!FIREBASE_READY){ alert("공유 저장소가 아직 설정되지 않았어요. (firebaseConfig 값을 채워주세요)"); return; }
   btn.classList.add("spinning");
   await syncFromShared(false);
   btn.classList.remove("spinning");
@@ -853,6 +882,7 @@ document.getElementById("nextMonth").onclick = ()=>{ calMonth.setMonth(calMonth.
 
 // ===== 등록 페이지 =====
 let regSector = "A";
+let colorPanelOpen = false;
 let regStaging = [];
 let regPendingImage = undefined;
 
@@ -977,9 +1007,12 @@ document.getElementById("regImgFile").addEventListener("change", (e)=>{
 document.getElementById("regRemoveImg").onclick = ()=>{ regPendingImage = null; renderAll(); };
 document.getElementById("regClearBtn").onclick = ()=>{ regStaging = []; renderAll(); };
 document.getElementById("regBackBtn").onclick = ()=>{ page = "routes"; renderAll(); };
+document.getElementById("colorPanelToggle").onclick = ()=>{ colorPanelOpen = !colorPanelOpen; renderAll(); };
 
-// 색상 등록: 사진에서 글자색 뽑기 (캔버스 기반)
-document.getElementById("pickTextFromImgBtn").onclick = ()=>{
+// 색상 등록: 사진에서 배경색/글자색 뽑기 (캔버스 기반)
+let pickTargetInputId = "newColorText";
+function openColorPicker(targetInputId){
+  pickTargetInputId = targetInputId;
   const img = currentRegImage();
   if(!img){ alert("먼저 사진을 업로드해주세요."); return; }
   const canvas = document.getElementById("colorPickCanvas");
@@ -992,7 +1025,9 @@ document.getElementById("pickTextFromImgBtn").onclick = ()=>{
     document.getElementById("colorPickWrap").style.display = "block";
   };
   imgEl.src = img;
-};
+}
+document.getElementById("pickBgFromImgBtn").onclick = ()=> openColorPicker("newColorBg");
+document.getElementById("pickTextFromImgBtn").onclick = ()=> openColorPicker("newColorText");
 document.getElementById("cancelPickBtn").onclick = ()=>{
   document.getElementById("colorPickWrap").style.display = "none";
 };
@@ -1006,7 +1041,7 @@ document.getElementById("colorPickCanvas").addEventListener("click", (e)=>{
   const y = Math.floor((e.clientY-rect.top)*scaleY);
   const px = ctx.getImageData(x, y, 1, 1).data;
   const hex = "#" + [px[0],px[1],px[2]].map(v=>v.toString(16).padStart(2,"0")).join("");
-  document.getElementById("newColorText").value = hex;
+  document.getElementById(pickTargetInputId).value = hex;
   document.getElementById("colorPickWrap").style.display = "none";
 });
 
@@ -1042,7 +1077,7 @@ document.getElementById("regApplyBtn").onclick = async ()=>{
   data[regSector].changeDate = document.getElementById("regChangeDate").value || todayStr();
   if(regPendingImage !== undefined) data[regSector].image = regPendingImage;
   save();
-  if(JSONBIN_READY){
+  if(FIREBASE_READY){
     try{ await pushSectorToShared(regSector); sharedOk = true; }
     catch(e){ alert("공유 저장소에 반영하지 못해서 이 기기에만 적용됐어요.\n(" + e.message + ")"); sharedOk = false; }
   }
@@ -1060,9 +1095,11 @@ function renderRegisterPage(){
   renderRegColorOptions();
   renderColorList();
   renderRegStaging();
+  document.getElementById("colorPanel").style.display = colorPanelOpen ? "block" : "none";
+  document.getElementById("colorPanelToggle").textContent = "🎨 색상 설정" + (colorPanelOpen ? " ▲" : " ▾");
   const msg = document.getElementById("sharedStatusMsg");
-  if(!JSONBIN_READY){
-    msg.textContent = "⚠ 공유 저장소 미설정 — 코드 상단 JSONBIN_API_KEY/BIN_ID를 채우면 모두에게 공유돼요.";
+  if(!FIREBASE_READY){
+    msg.textContent = "⚠ 공유 저장소 미설정 — 코드 상단 firebaseConfig 값을 채우면 모두에게 공유돼요.";
   }else if(sharedOk){
     msg.textContent = "🟢 공유 저장소 연결됨 — 여기서 적용하면 모두에게 반영돼요.";
   }else{
@@ -1095,7 +1132,21 @@ function renderAll(){
 
 document.getElementById("regChangeDate").value = todayStr();
 renderAll();
-syncFromShared(false).then(()=>{ renderAll(); });
+if(FIREBASE_READY){
+  onSnapshot(SHARED_DOC(), (snap)=>{
+    if(!snap.exists()) return;
+    const remote = snap.data();
+    SECTIONS.forEach(s=> reconcileSector(s, remote[s]));
+    data.colors = remote.colors || data.colors || [];
+    save();
+    sharedOk = true;
+    if(!initialSectorPicked){
+      const picked = pickLatestSector();
+      if(picked){ current = picked; initialSectorPicked = true; }
+    }
+    renderAll();
+  }, (err)=>{ sharedOk = false; console.warn("Firestore 연결 실패:", err.message); renderAll(); });
+}
 </script>
 </body>
 </html>
