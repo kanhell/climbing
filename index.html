@@ -79,6 +79,12 @@ main{padding:12px 14px 40px; max-width:680px; margin:0 auto;}
 .histdot{width:9px; height:9px; border-radius:50%; flex:none;}
 .histtxt{flex:1;}
 .histdel{flex:none; border:none; background:none; color:var(--sub); font-size:12px; cursor:pointer;}
+.editpanel{margin-top:8px; padding-top:8px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:8px;}
+.editpanel select, .editpanel input{padding:9px 10px; border-radius:9px; border:1px solid var(--line); background:var(--bg); color:var(--text); font-size:14px;}
+.editrow{display:flex; gap:6px;}
+.editbtn{flex:1; padding:9px; border-radius:9px; border:none; font-weight:700; font-size:13px; cursor:pointer; background:var(--accent); color:#fff;}
+.editbtn.danger{background:#EF4444; color:#fff;}
+.editbtn.secondary{background:var(--bg); color:var(--sub); border:1px solid var(--line);}
 
 .addbox{ margin-top:16px; padding:12px; background:var(--card); border:1px dashed var(--line); border-radius:14px;}
 .addbox .row{display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;}
@@ -107,6 +113,14 @@ main{padding:12px 14px 40px; max-width:680px; margin:0 auto;}
 .caldots{display:flex; gap:2px;}
 .caldot{width:6px; height:6px; border-radius:50%;}
 .daydetail-title{font-weight:700; font-size:14px; margin:16px 0 8px;}
+.daydetail-titlerow{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin:16px 0 8px;}
+.daydetail-titlerow .daydetail-title{margin:0; flex:1;}
+.delallbtn{font-size:11px; padding:6px 9px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--sub); cursor:pointer; white-space:nowrap;}
+.moverow{display:flex; gap:6px; margin-bottom:10px; align-items:center;}
+.moverow input[type=date]{flex:1; padding:8px 10px; border-radius:9px; border:1px solid var(--line); background:var(--bg); color:var(--text); font-size:13px;}
+.memowrap{margin-bottom:14px;}
+.memoinput{width:100%; min-height:60px; padding:9px 10px; border-radius:10px; border:1px solid var(--line);
+  background:var(--card); color:var(--text); font-size:13px; font-family:inherit; resize:vertical;}
 .levelhead{display:flex; align-items:center; justify-content:space-between; gap:8px;
   background:var(--card); border:1px solid var(--line); border-radius:12px; padding:9px 12px;
   margin-bottom:6px; cursor:pointer;}
@@ -321,6 +335,7 @@ function mkStorage(){
     D:{image:null, theme:"", changeDate:null, routes:[]},
     archive:[],
     colors:[],
+    notes:{},
   };
 }
 const KEY = "climbing_tracker_v5";
@@ -337,6 +352,7 @@ function load(){
       });
       if(!d.archive) d.archive = [];
       if(!d.colors) d.colors = [];
+      if(!d.notes) d.notes = {};
       return d;
     }
   }catch(e){}
@@ -357,6 +373,7 @@ let initialSectorPicked = !!pickLatestSector();
 let statusFilter = [];
 let levelFilter = [];
 let expanded = new Set();
+let menuOpen = new Set();
 
 function renderPageTabs(){
   const el = document.getElementById("pageTabs");
@@ -550,15 +567,59 @@ function renderRoutes(){
     mid.appendChild(sts);
     top.appendChild(mid);
 
-    const del = document.createElement("button");
-    del.className = "del";
-    del.textContent = "✕";
-    del.onclick = ()=>{
-      data[current].routes = data[current].routes.filter(x=>x.id!==r.id);
-      save(); renderAll();
+    const menuBtn = document.createElement("button");
+    menuBtn.className = "del";
+    menuBtn.textContent = "⋮";
+    menuBtn.onclick = ()=>{
+      if(menuOpen.has(r.id)) menuOpen.delete(r.id); else menuOpen.add(r.id);
+      renderAll();
     };
-    top.appendChild(del);
+    top.appendChild(menuBtn);
     row.appendChild(top);
+
+    if(menuOpen.has(r.id)){
+      const edit = document.createElement("div");
+      edit.className = "editpanel";
+      const colorSel = document.createElement("select");
+      fillColorSelect(colorSel);
+      colorSel.value = r.color;
+      edit.appendChild(colorSel);
+      const levelIn = document.createElement("input");
+      levelIn.value = r.level;
+      levelIn.placeholder = "난이도";
+      edit.appendChild(levelIn);
+      const editRow = document.createElement("div");
+      editRow.className = "editrow";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "editbtn";
+      saveBtn.textContent = "저장";
+      saveBtn.onclick = ()=>{
+        if(!colorSel.value){ alert("색상을 먼저 등록해주세요."); return; }
+        if(!levelIn.value.trim()){ levelIn.focus(); return; }
+        r.color = colorSel.value;
+        r.level = levelIn.value.trim();
+        menuOpen.delete(r.id);
+        save(); renderAll();
+      };
+      editRow.appendChild(saveBtn);
+      const delBtn = document.createElement("button");
+      delBtn.className = "editbtn danger";
+      delBtn.textContent = "삭제";
+      delBtn.onclick = ()=>{
+        if(!confirm("이 문제를 삭제할까요? 기록도 함께 사라져요.")) return;
+        data[current].routes = data[current].routes.filter(x=>x.id!==r.id);
+        menuOpen.delete(r.id);
+        save(); renderAll();
+      };
+      editRow.appendChild(delBtn);
+      const cancelBtn = document.createElement("button");
+      cancelBtn.className = "editbtn secondary";
+      cancelBtn.textContent = "취소";
+      cancelBtn.onclick = ()=>{ menuOpen.delete(r.id); renderAll(); };
+      editRow.appendChild(cancelBtn);
+      edit.appendChild(editRow);
+      row.appendChild(edit);
+    }
 
     if(expanded.has(r.id)){
       const hist = document.createElement("div");
@@ -644,7 +705,6 @@ const firebaseConfig = {
   storageBucket: "climbing-22d7f.firebasestorage.app",
   messagingSenderId: "210024090627",
   appId: "1:210024090627:web:df2a3cc9ac19da08685236",
-  measurementId: "G-TVL8BPX4SK"
 };
 const FIREBASE_READY = firebaseConfig.apiKey.indexOf("여기에")===-1;
 let fsdb = null;
@@ -733,6 +793,24 @@ document.getElementById("refreshBtn").onclick = async ()=>{
 let calMonth = new Date(); calMonth.setDate(1);
 let selectedDay = todayStr();
 let expandedLevels = new Set();
+let moveOpenFlag = false;
+function addDays(dateStr, delta){
+  const d = new Date(dateStr+"T00:00:00");
+  d.setDate(d.getDate()+delta);
+  return d.toISOString().slice(0,10);
+}
+function moveAllForDate(fromDate, toDate){
+  SECTIONS.forEach(s=>{
+    data[s].routes.forEach(r=>{
+      (r.history||[]).forEach(h=>{ if(h.date===fromDate) h.date=toDate; });
+    });
+  });
+  (data.archive||[]).forEach(a=>{ if(a.date===fromDate) a.date=toDate; });
+  if(data.notes && data.notes[fromDate] !== undefined && !data.notes[toDate]){
+    data.notes[toDate] = data.notes[fromDate];
+    delete data.notes[fromDate];
+  }
+}
 
 function getAllEntries(){
   const out = [...(data.archive||[])];
@@ -757,6 +835,26 @@ function buildDayMap(){
   const result = {};
   Object.keys(byDay).forEach(d=>{ result[d] = Object.values(byDay[d]); });
   return result;
+}
+
+function deleteEntry(e){
+  const route = data[e.sector] && data[e.sector].routes.find(r=>r.id===e.routeId);
+  if(route){
+    const idx = (route.history||[]).findIndex(h=>h.status===e.status && h.date===e.date);
+    if(idx>-1){ route.history.splice(idx,1); return; }
+  }
+  data.archive = (data.archive||[]).filter(a=>
+    !(a.sector===e.sector && a.routeId===e.routeId && a.status===e.status && a.date===e.date)
+  );
+}
+
+function deleteAllForDate(dateStr){
+  SECTIONS.forEach(s=>{
+    data[s].routes.forEach(r=>{
+      r.history = (r.history||[]).filter(h=>h.date!==dateStr);
+    });
+  });
+  data.archive = (data.archive||[]).filter(a=>a.date!==dateStr);
 }
 
 function renderCalendar(){
@@ -800,7 +898,7 @@ function renderCalendar(){
       });
       cell.appendChild(dots);
     }
-    cell.onclick = ()=>{ selectedDay = ds; expandedLevels = new Set(); renderAll(); };
+    cell.onclick = ()=>{ selectedDay = ds; expandedLevels = new Set(); moveOpenFlag = false; renderAll(); };
     grid.appendChild(cell);
   }
   renderDayDetail(byDate);
@@ -810,11 +908,80 @@ function renderDayDetail(byDate){
   const el = document.getElementById("dayDetail");
   el.innerHTML = "";
   if(!selectedDay){ return; }
+  const list = byDate[selectedDay];
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "daydetail-titlerow";
   const title = document.createElement("div");
   title.className = "daydetail-title";
   title.textContent = fmtFull(selectedDay) + " 기록";
-  el.appendChild(title);
-  const list = byDate[selectedDay];
+  titleRow.appendChild(title);
+  if(list && list.length){
+    const moveBtn = document.createElement("button");
+    moveBtn.className = "delallbtn";
+    moveBtn.textContent = "📅 날짜 이동";
+    moveBtn.onclick = ()=>{ moveOpenFlag = !moveOpenFlag; renderAll(); };
+    titleRow.appendChild(moveBtn);
+    const delAllBtn = document.createElement("button");
+    delAllBtn.className = "delallbtn";
+    delAllBtn.textContent = "🗑 전체 삭제";
+    delAllBtn.onclick = ()=>{
+      if(!confirm(fmtFull(selectedDay) + "의 기록을 전부 삭제할까요? 이 날짜에 기록된 모든 문제의 상태 기록이 사라지고, 되돌릴 수 없어요.")) return;
+      deleteAllForDate(selectedDay);
+      save(); renderAll();
+    };
+    titleRow.appendChild(delAllBtn);
+  }
+  el.appendChild(titleRow);
+
+  if(moveOpenFlag && list && list.length){
+    const moveRow = document.createElement("div");
+    moveRow.className = "moverow";
+    const dateIn = document.createElement("input");
+    dateIn.type = "date";
+    dateIn.value = addDays(selectedDay, -1);
+    moveRow.appendChild(dateIn);
+    const goBtn = document.createElement("button");
+    goBtn.className = "editbtn";
+    goBtn.textContent = "이동";
+    goBtn.onclick = ()=>{
+      const to = dateIn.value;
+      if(!to || to===selectedDay) return;
+      if(!confirm(fmtFull(selectedDay) + " 기록 " + list.length + "건을 " + fmtFull(to) + "(으)로 모두 옮길까요?")) return;
+      moveAllForDate(selectedDay, to);
+      selectedDay = to;
+      calMonth = new Date(to+"T00:00:00"); calMonth.setDate(1);
+      moveOpenFlag = false;
+      save(); renderAll();
+    };
+    moveRow.appendChild(goBtn);
+    const cancelBtn = document.createElement("button");
+    cancelBtn.className = "editbtn secondary";
+    cancelBtn.textContent = "취소";
+    cancelBtn.onclick = ()=>{ moveOpenFlag = false; renderAll(); };
+    moveRow.appendChild(cancelBtn);
+    el.appendChild(moveRow);
+  }
+
+  const memoWrap = document.createElement("div");
+  memoWrap.className = "memowrap";
+  const memoLabel = document.createElement("div");
+  memoLabel.className = "glabel";
+  memoLabel.textContent = "메모";
+  memoWrap.appendChild(memoLabel);
+  const memoInput = document.createElement("textarea");
+  memoInput.className = "memoinput";
+  memoInput.placeholder = "이 날의 메모를 남겨보세요...";
+  memoInput.value = (data.notes && data.notes[selectedDay]) || "";
+  memoInput.onchange = ()=>{
+    data.notes = data.notes || {};
+    if(memoInput.value.trim()) data.notes[selectedDay] = memoInput.value;
+    else delete data.notes[selectedDay];
+    save();
+  };
+  memoWrap.appendChild(memoInput);
+  el.appendChild(memoWrap);
+
   if(!list || list.length===0){
     el.innerHTML += '<div class="empty">이 날짜엔 기록이 없어요.</div>';
     return;
@@ -871,6 +1038,15 @@ function renderDayDetail(byDate){
         lbl.textContent = stLabel(e.status);
         lbl.style.color = stColor(e.status);
         row.appendChild(lbl);
+        const delBtn = document.createElement("button");
+        delBtn.className = "del";
+        delBtn.textContent = "✕";
+        delBtn.onclick = ()=>{
+          if(!confirm(colorLbl(e.color) + " · Lv " + e.level + " · " + stLabel(e.status) + " 기록을 삭제할까요?")) return;
+          deleteEntry(e);
+          save(); renderAll();
+        };
+        row.appendChild(delBtn);
         el.appendChild(row);
       });
     }
